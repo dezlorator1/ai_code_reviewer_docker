@@ -18,6 +18,7 @@ fi
 LOG_DIR=$(yq -r '.paths.LOG_DIR' "$CONFIG_FILE")
 OUT_DIR=$(yq -r '.paths.OUT_DIR' "$CONFIG_FILE")
 CHUNKS_DIR=$(yq -r '.paths.CHUNKS_DIR' "$CONFIG_FILE")
+SUMMARY_FILE=$(yq -r '.paths.SUMMARY_FILE' "$CONFIG_FILE")
 # =============================
 
 # 2. Парсинг аргументов

@@ -48,139 +48,166 @@ log = logging.getLogger(SCRIPT_NAME)
 
 
 # === Prompt ===
-EXTRACT_CONTEXT_PROMPT = """You are analyzing a git diff for a Merge Request (MR) in an OpenSearch plugin project.
+EXTRACT_CONTEXT_PROMPT = """Ты помощник тимлида, который анализирует Merge Request в OpenSearch плагине.
 
-This plugin provides a Splunk-like query language for OpenSearch.
-Language: Java
+**Контекст проекта:**
+- Плагин предоставляет язык запросов (аналог Splunk) для OpenSearch
+- Язык: Java
+- Используется крупными компаниями в продакшене
+
+**Твоя задача:** Помочь тимлиду быстро понять:
+1. Что сделано в этом MR и зачем
+2. Какие компоненты затронуты
+3. Есть ли критичные изменения (особенно в Query Language)
 
 GIT DIFF:
 ```diff
 {diff}
 ```
 
-TASK: Create a comprehensive MR context file that will help code reviewers understand the global scope of changes.
-
-OUTPUT FORMAT (in English):
-
----
-# MR Context - Global Changes Overview
-
-**Generated:** {timestamp}
-
 ---
 
-## Summary
+ФОРМАТ ВЫВОДА:
 
-[2-3 sentences: what is the main goal of this MR]
+# Контекст MR
+
+**Дата анализа:** {timestamp}
+**Файлов изменено:** {file_count}
 
 ---
 
-## Files Changed ({file_count})
+## 📋 Что сделано и зачем
 
-### New Files
-- `path/to/File.java` - [brief purpose]
+[2-4 предложения. Объясни тимлиду цель этого MR:]
+- Что добавили/изменили/удалили?
+- Какую проблему это решает?
+- Это новая фича, рефакторинг, баг-фикс, или что-то другое?
 
-### Modified Files
-- `path/to/File.java` - [what changed: added method X, refactored Y]
-
-### Deleted Files
-- `path/to/File.java` - [why deleted]
-
----
-
-## Affected Components
-
-List affected packages/modules:
-- `com.company.query.parser` - [what changed]
-- `com.company.query.executor` - [what changed]
-- `com.company.aggregation` - [what changed]
+**Примеры:**
+- "Добавлена новая команда `percentile()` для вычисления процентилей в агрегациях. Пользователи давно просили эту фичу для статистического анализа."
+- "Рефакторинг парсера запросов — вынесена логика валидации в отдельный класс. Улучшает читаемость и тестируемость."
+- "Исправлен баг с некорректной обработкой null значений в команде `stats`. Могло приводить к NPE в продакшене."
 
 ---
 
-## API Changes
+## 📂 Измененные файлы
 
-### Public API Modifications
-**IF any public methods/classes were added/removed/modified:**
-- Class: `UserService`
-  - Added: `getUserById(String id)` → returns Optional<User>
-  - Modified: `getUsers()` → now returns List instead of Array
-  - Removed: `deleteUser(int id)` → BREAKING CHANGE
+### Новые файлы
+[Если есть:]
+- `path/File.java` — [что делает этот класс]
 
-**IF no public API changes:**
-No public API changes detected.
+### Измененные файлы
+- `path/File.java` — [кратко что изменено: добавлен метод X, изменена логика Y]
 
----
-
-## Query Language Changes ⚠️
-
-**CRITICAL SECTION - analyze carefully:**
-
-### Syntax Changes
-**IF query syntax was modified:**
-- [Describe what changed in query parsing/execution]
-- Example: "Added support for `| stats avg(field) by group`"
-
-### Semantic Changes
-**IF query behavior changed:**
-- [Describe how existing queries might behave differently]
-- Example: "Aggregation now sorts by value desc instead of key asc"
-
-### Breaking Changes
-**IF queries that worked before might break:**
-- [List specific breaking changes]
-- Example: "Removed support for deprecated `timechart` command"
-
-**IF no query language changes:**
-No query language changes detected.
+### Удаленные файлы
+[Если есть:]
+- `path/File.java` — [что удалили и почему]
 
 ---
 
-## Dependencies Between Files
+## 🔧 Затронутые компоненты
 
-List files that depend on each other in this MR:
+[Перечисли пакеты/модули где есть изменения. Это помогает понять масштаб:]
 
-**Example:**
-- `UserController.java` calls `UserService.getUserById()`
-  - ✓ Method is added in `UserService.java` (same MR)
-
-- `QueryExecutor.java` uses `QueryParser.parseExpression()`
-  - ⚠️ Signature changed in `QueryParser.java` - verify compatibility
-
-**IF files are independent:**
-No significant cross-file dependencies detected.
+- `com.company.query.parser` — [что изменилось]
+- `com.company.query.executor` — [что изменилось]
+- `com.company.settings` — [что изменилось]
+- `com.company.util` — [вспомогательные изменения]
 
 ---
 
-## Potential Risks
+## ⚠️ КРИТИЧНО: Изменения в Query Language
 
-### High Risk
-- [List high-risk changes: breaking changes, business logic modifications]
+**Это самая важная секция для тимлида!**
 
-### Medium Risk
-- [List medium-risk changes: refactorings, new features]
+[Если НЕТ изменений в командах/парсинге/выполнении запросов:]
+Изменений в языке запросов не обнаружено.
 
-### Low Risk
-- [List low-risk changes: code style, minor improvements]
+[Если ЕСТЬ изменения:]
+
+### Новые команды
+- `percentile(field, 95)` — вычисление процентилей
+- `rare(field)` — поиск редких значений
+
+### Измененные команды
+- `stats avg(field)` — теперь корректно обрабатывает null (раньше игнорировал)
+- `sort` — добавлена опция `-desc` для сортировки по убыванию
+
+### Удаленные команды (BREAKING CHANGES)
+- `timechart` — удалена устаревшая команда (deprecated с версии 2.0)
+
+### Изменения в поведении
+[Опиши как изменилось поведение существующих команд:]
+- Команда `stats count()` теперь возвращает 0 вместо null для пустых результатов
+- Приоритет операторов изменен: `AND` теперь выше чем `OR`
 
 ---
 
-## Test Coverage
+## ⚙️ Системные настройки
 
-**Test files in this MR:**
-- `UserServiceTest.java` - [what's tested]
+[Если НЕТ изменений:]
+Изменений в системных настройках не обнаружено.
 
-**Missing tests for:**
-- [List production files without corresponding test changes]
+[Если ЕСТЬ изменения:]
+
+### Новые настройки
+- `query.max_depth` — ограничение глубины вложенности запросов (default: 10)
+
+### Измененные настройки
+- `query.timeout` — увеличен с 30s до 60s (для медленных кластеров)
+
+### Удаленные настройки
+- `legacy_mode` — удалена поддержка старого формата
+
+**Риски:** [Объясни какие могут быть последствия изменения настроек]
 
 ---
 
-RULES:
-1. Be specific - mention actual class/method names from the diff
-2. Focus on CHANGES, not entire file content
-3. Identify cross-file dependencies
-4. Flag query language changes prominently
-5. Use "No X detected" if section is empty (don't skip sections)
-6. Write in English
+## 🔗 Зависимости между файлами
+
+[Эта секция помогает понять связанность изменений:]
+
+**Связанные изменения в этом MR:**
+- `QueryParser.java` добавил метод `parsePercentile()`
+  - ✓ `PercentileCommand.java` использует этот метод (добавлен в этом же MR)
+
+- `QueryExecutor.java` изменил сигнатуру `execute(Query q, Context ctx)`
+  - ✓ `StatsCommand.java` обновил вызов под новую сигнатуру
+
+**Потенциальные проблемы:**
+[Если есть изменения, которые могут требовать правок в других местах:]
+- `UserService.getUserById()` теперь возвращает Optional вместо null
+  - ⚠️ Проверь все места вызова — могут быть NullPointerException
+
+---
+
+## 🎯 Что нужно проверить при ревью
+
+[Подсказки тимлиду — на что обратить внимание:]
+
+### Обязательно проверить:
+- [ ] Backward compatibility для Query Language (не сломаются ли существующие запросы)
+- [ ] Обработка null/edge cases в новых командах
+- [ ] Влияние изменений системных настроек на production
+
+### Желательно проверить:
+- [ ] Есть ли тесты для новых команд
+- [ ] Обновлена ли документация
+- [ ] Нет ли дублирования кода
+
+### Можно пропустить:
+- Мелкие рефакторинги внутренних классов
+- Изменения в утилитах (если не влияют на бизнес-логику)
+
+---
+
+ПРАВИЛА:
+1. Пиши для тимлида, который может быть не в контексте проекта
+2. Объясняй "что и зачем", а не только "что изменилось"
+3. Фокус на Query Language и системных настройках
+4. Выделяй breaking changes явно
+5. Если секция пустая — пиши "не обнаружено" (не пропускай секции)
+6. Будь конкретным — упоминай имена классов/методов
 """
 
 
