@@ -1,0 +1,35 @@
+services:
+  code-review:
+    build: .
+    volumes:
+      # === ИСХОДНЫЕ ДАННЫЕ ===
+      
+      # 1. Монтируем КОРНЕВУЮ папку со всеми вашими проектами.
+      # Слева укажите путь к вашей папке с репозиториями на диске.
+      - C:\Work\Projects:/projects
+      
+      # 2. Монтируем папку, где вы храните diff файлы для проверки.
+      - ./inputs:/inputs
+      
+      # === РЕЗУЛЬТАТЫ ===
+      
+      # 3. Куда складывать отчеты (папка рядом с docker-compose)
+      - ./review_results:/app/output
+      
+      # 4. Логи (опционально)
+      - ./review_logs:/app/logs
+
+    environment:
+      # Настройки LLM
+      - LLM_API_URL=http://host.docker.internal:1234/v1/chat/completions
+      - LLM_MODEL=gpt-oss-20b
+      - LLM_TEMPERATURE=0.2
+      - LLM_MAX_TOKENS=16000
+
+    # === КОМАНДА ЗАПУСКА ===
+    # Обратите внимание на пути:
+    # --diff берем из папки /inputs
+    # --project составляем как /projects/<ИМЯ_ПАПКИ_ПРОЕКТА>
+    command: >
+      --diff /inputs/feature-branch.diff
+      --project /projects/opensearch-sql-plugin

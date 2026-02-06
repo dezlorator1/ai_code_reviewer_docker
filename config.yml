@@ -1,0 +1,21 @@
+paths:
+  # Системные пути скрипта (не менять)
+  SCRIPT_PATH: /app/review_chunk.py
+  
+  # Результаты и логи
+  SUMMARY_FILE: /app/output/summary.md
+  MR_CONTEXT_FILE: /app/output/mr_context.md
+  LOG_FILE: /app/logs/run_reviews.log
+  LOG_DIR: /app/logs
+  
+  # Временные папки (очищаются при каждом запуске)
+  CHUNKS_DIR: /app/temp_chunks
+  OUT_DIR: /app/temp_results
+
+llm:
+  # Дефолтные значения (перезаписываются из docker-compose)
+  api_url: "http://localhost:1234/v1/chat/completions"
+  model: "gpt-oss-20b"
+  max_tokens: 16000
+  temperature: 0.2
+  timeout: 600

@@ -1,0 +1,23 @@
+# === Python artifacts ===
+__pycache__/
+*.pyc
+
+# === Local Data Directories (Volumes) ===
+# Папка с входными диффами (обычно они уникальны для запуска)
+inputs/
+# Папка с результатами генерации
+review_results/
+# Логи выполнения
+review_logs/
+
+# === IDE settings ===
+.idea/
+.vscode/
+*.swp
+
+# === System files ===
+.DS_Store
+Thumbs.db
+
+# === Docker/Env ===
+.env
