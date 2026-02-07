@@ -5,7 +5,7 @@ set -e
 
 # === Configuration loading ===
 
-# 1. Определяем директорию, где находится ЭТОТ скрипт (независимо от того, откуда его вызвали)
+# 1. Определяем директорию, где находится ЭТОТ скрипт
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/config.yml"
 
@@ -15,103 +15,153 @@ if ! command -v yq &> /dev/null; then
     exit 1
 fi
 
+# Загружаем пути из конфига
 LOG_DIR=$(yq -r '.paths.LOG_DIR' "$CONFIG_FILE")
 OUT_DIR=$(yq -r '.paths.OUT_DIR' "$CONFIG_FILE")
 CHUNKS_DIR=$(yq -r '.paths.CHUNKS_DIR' "$CONFIG_FILE")
+DIFF_DIR=$(yq -r '.paths.DIFF_DIR' "$CONFIG_FILE")
 SUMMARY_FILE=$(yq -r '.paths.SUMMARY_FILE' "$CONFIG_FILE")
+
 # =============================
 
-# 2. Парсинг аргументов
-# Инициализируем переменные пустыми значениями
-DIFF_FILE_PATH=""
-TARGET_PROJECT_PATH=""
+# Корневая папка со всеми проектами (фиксированная)
+PROJECTS_ROOT="/projects"
 
-# Цикл по всем переданным аргументам
+# 2. Парсинг аргументов
+DIFF_FILES=""           # Список diff файлов через запятую: /inputs/a.diff,/inputs/b.diff
+PROJECT_NAMES=""        # Список имен проектов через запятую: backend,frontend
+
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --diff)
-            DIFF_FILE_PATH="$2"
-            shift 2 # Сдвигаем аргументы на 2 (сам флаг и его значение)
+        --diffs)
+            DIFF_FILES="$2"
+            shift 2
             ;;
-        --project)
-            TARGET_PROJECT_PATH="$2"
+        --names)
+            PROJECT_NAMES="$2"
             shift 2
             ;;
         *)
             echo "Ошибка: Неизвестный параметр: $1"
-            echo "Использование: $0 --diff <путь_до_diff> --project <путь_до_проекта>"
+            echo ""
+            echo "Использование:"
+            echo "  $0 --diffs <diff1,diff2,...> --names <name1,name2,...>"
+            echo ""
+            echo "Пример:"
+            echo "  $0 \\"
+            echo "    --diffs /inputs/backend.diff,/inputs/frontend.diff \\"
+            echo "    --names backend,frontend"
+            echo ""
+            echo "Примечание: все проекты ищутся в /projects/<name>"
             exit 1
             ;;
     esac
 done
 
-# Проверка, что обязательные параметры были заданы
-if [ -z "$DIFF_FILE_PATH" ] || [ -z "$TARGET_PROJECT_PATH" ]; then
+# 3. Валидация аргументов
+if [ -z "$DIFF_FILES" ] || [ -z "$PROJECT_NAMES" ]; then
     echo "Ошибка: Не заданы обязательные аргументы."
-    echo "Использование: $0 --diff <путь_до_diff_файла> --project <путь_до_корня_проекта>"
+    echo ""
+    echo "Использование:"
+    echo "  $0 --diffs <diff1,diff2,...> --names <name1,name2,...>"
     exit 1
 fi
 
-# Проверка существования входных данных
-if [ ! -f "$DIFF_FILE_PATH" ]; then
-    echo "Ошибка: Файл diff не найден: $DIFF_FILE_PATH"
+# Преобразуем строки с запятыми в массивы
+IFS=',' read -ra DIFF_ARRAY <<< "$DIFF_FILES"
+IFS=',' read -ra NAME_ARRAY <<< "$PROJECT_NAMES"
+
+# Проверка что количество совпадает
+if [ "${#DIFF_ARRAY[@]}" -ne "${#NAME_ARRAY[@]}" ]; then
+    echo "Ошибка: Количество diff файлов (${#DIFF_ARRAY[@]}) и имен (${#NAME_ARRAY[@]}) не совпадает!"
     exit 1
 fi
 
-if [ ! -d "$TARGET_PROJECT_PATH" ]; then
-    echo "Ошибка: Папка проекта не найдена: $TARGET_PROJECT_PATH"
-    exit 1
-fi
+# Проверка существования файлов
+for diff in "${DIFF_ARRAY[@]}"; do
+    if [ ! -f "$diff" ]; then
+        echo "Ошибка: Diff файл не найден: $diff"
+        exit 1
+    fi
+done
+
+# Проверка существования проектов
+for name in "${NAME_ARRAY[@]}"; do
+    project_path="$PROJECTS_ROOT/$name"
+    if [ ! -d "$project_path" ]; then
+        echo "Ошибка: Проект не найден: $project_path"
+        echo "Убедитесь что папка '$name' существует в /projects/"
+        exit 1
+    fi
+done
 
 echo "=========================================="
 echo "Запуск пайплайна автоматического ревью"
-echo "Diff:    $DIFF_FILE_PATH"
-echo "Project: $TARGET_PROJECT_PATH"
+echo "=========================================="
+echo "Проекты:"
+for i in "${!NAME_ARRAY[@]}"; do
+    echo "  [$((i+1))] ${NAME_ARRAY[$i]}"
+    echo "      Diff:    ${DIFF_ARRAY[$i]}"
+    echo "      Path:    $PROJECTS_ROOT/${NAME_ARRAY[$i]}"
+done
 echo "=========================================="
 
-# 3. Подготовка директорий
-# Удаляем старые чанки и результаты, чтобы не смешивать с предыдущим запуском
-echo "[1/5] Очистка рабочих директорий..."
+# 4. Подготовка директорий
+echo "[1/6] Очистка рабочих директорий..."
 rm -rf "${CHUNKS_DIR:?}"/*
 rm -rf "${OUT_DIR:?}"/*
+rm -rf "${DIFF_DIR:?}"/*
 
-# Создаем директории, если их нет
 mkdir -p "$CHUNKS_DIR"
 mkdir -p "$OUT_DIR"
 mkdir -p "$LOG_DIR"
+mkdir -p "$DIFF_DIR"
 
-# 4. Извлечение глобального контекста MR
-echo "[2/5] Анализ глобального контекста MR..."
-python3 $SCRIPT_DIR/extract_mr_context.py --diff "$DIFF_FILE_PATH"
+# 5. Объединение diff файлов
+echo "[2/6] Объединение diff файлов из нескольких проектов..."
 
-# 5. Разбиение diff на чанки
-echo "[3/5] Разбиение diff файла на чанки..."
-# Предполагается, что split_by_class.sh берет путь из аргумента, 
-# а сохраняет в CHUNKS_DIR (который он должен брать из env или конфига)
+python3 "$SCRIPT_DIR/merge_diffs.py" \
+    --diffs ${DIFF_ARRAY[@]} \
+    --names ${NAME_ARRAY[@]}
 
-$SCRIPT_DIR/split_by_class.sh "$DIFF_FILE_PATH"
+MERGED_DIFF="$DIFF_DIR/merged.diff"
+
+if [ ! -f "$MERGED_DIFF" ]; then
+    echo "Ошибка: Не удалось создать объединенный diff"
+    exit 1
+fi
+
+# 6. Извлечение глобального контекста MR
+echo "[3/6] Анализ глобального контекста MR..."
+python3 "$SCRIPT_DIR/extract_mr_context.py" --diff "$MERGED_DIFF"
+
+# 7. Разбиение diff на чанки
+echo "[4/6] Разбиение diff файла на чанки..."
+"$SCRIPT_DIR/split_by_class.sh" "$MERGED_DIFF"
 
 # Проверка, появились ли файлы
 if [ -z "$(ls -A "$CHUNKS_DIR")" ]; then
-   echo "Ошибка: Чанки не созданы. Проверьте содержимое diff файла."
+   echo "Ошибка: Чанки не созданы. Проверьте содержимое diff файлов."
    exit 1
 fi
 
-# 6. Запуск ревью по чанкам
-echo "[4/5] Запуск анализа через LLM..."
-# Передаем путь к проекту в run_reviews.sh
+# 8. Запуск ревью по чанкам
+echo "[5/6] Запуск анализа через LLM..."
 
-$SCRIPT_DIR/run_reviews.sh "$TARGET_PROJECT_PATH"
+# Передаем проекты как /projects/name1:/projects/name2:...
+PROJECT_PATHS=()
+for name in "${NAME_ARRAY[@]}"; do
+    PROJECT_PATHS+=("$PROJECTS_ROOT/$name")
+done
+ALL_PROJECTS=$(IFS=:; echo "${PROJECT_PATHS[*]}")
 
-# 7. Сборка итогового отчета
-echo "[5/5] Генерация финального отчета..."
-# Предполагается, что summarize_reviews.py сам знает, откуда читать (OUT_DIR)
-# и куда писать (SUMMARY_FILE) на основе config.env или зашитых путей.
-# Если скрипт лежит не в текущей папке, укажите полный путь к нему.
+"$SCRIPT_DIR/run_reviews.sh" "$ALL_PROJECTS"
 
-python3 $SCRIPT_DIR/summarize_reviews.py
+# 9. Сборка итогового отчета
+echo "[6/6] Генерация финального отчета..."
+python3 "$SCRIPT_DIR/summarize_reviews.py"
 
 echo "=========================================="
-echo "Готово! Результат записан в:"
+echo "✅ Готово! Результат записан в:"
 echo "$SUMMARY_FILE"
 echo "=========================================="

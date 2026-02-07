@@ -1,22 +1,26 @@
+#!/usr/bin/env python3
+"""
+Review individual code chunk from diff.
+Supports multi-project MRs with project prefixes.
+"""
+
 import argparse
 import re
 from pathlib import Path
-import uuid
 import logging
 import requests
 from datetime import datetime
 import yaml
 
-# Определяем путь к конфигу
+# Загрузка конфига
 config_path = Path(__file__).parent / "config.yml"
 
-# --- Читаем конфиг ---
 with open(config_path) as f:
     config = yaml.safe_load(f)
 
 # ==== LOG CONFIG ====
 SCRIPT_NAME = Path(__file__).name
-LOG_FILE    = Path(config['paths']['LOG_FILE'])
+LOG_FILE = Path(config['paths']['LOG_FILE'])
 MR_CONTEXT_FILE = Path(config['paths']['OUT_DIR']) / "mr_context.md"
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -132,15 +136,66 @@ def load_mr_context():
         return "MR context not available - reviewing file in isolation."
 
 def extract_file_from_diff(diff_text):
+    """Extract file path from diff (with project prefix if present)."""
     m = re.search(r"diff --git a/(.*?) b/", diff_text)
     return m.group(1) if m else None
 
-def load_original(project_root, file_path):
-    full_path = Path(project_root) / file_path
-    if not full_path.exists():
-        log.warning(f"ORIGINAL FILE NOT FOUND: {full_path}")
-        return "<FILE NOT FOUND>"
-    return full_path.read_text(errors="ignore")
+def load_original(project_roots, file_path):
+    """
+    Load original file, supporting multi-project structure.
+
+    Args:
+        project_roots: String with paths separated by ':' (e.g. "/p1:/p2")
+        file_path: File path with or without project prefix (e.g. "backend/src/Api.java")
+
+    Returns:
+        File content or error message
+    """
+    log.info(f"Loading original file: {file_path}")
+    log.info(f"Project roots: {project_roots}")
+
+    # Split multiple project paths
+    project_paths = project_roots.split(':')
+
+    # Check if path has project prefix (e.g. "backend/src/File.java")
+    parts = file_path.split('/', 1)
+
+    if len(parts) == 2 and len(project_paths) > 1:
+        # Multi-project mode: file_path = "backend/src/Api.java"
+        project_prefix = parts[0]  # "backend"
+        relative_path = parts[1]   # "src/Api.java"
+
+        log.info(f"Multi-project mode: prefix={project_prefix}, relative={relative_path}")
+
+        # Try to find matching project
+        for project_path in project_paths:
+            project_name = Path(project_path).name
+
+            if project_name == project_prefix:
+                full_path = Path(project_path) / relative_path
+                log.info(f"Trying: {full_path}")
+
+                if full_path.exists():
+                    log.info(f"FOUND: {full_path}")
+                    return full_path.read_text(errors="ignore")
+
+        log.warning(f"ORIGINAL FILE NOT FOUND for prefix '{project_prefix}': {file_path}")
+        return f"<FILE NOT FOUND: {file_path}>"
+
+    else:
+        # Single project mode: try each project root
+        for project_path in project_paths:
+            relative_path = parts[1]
+            #log.info(f"Project path: {project_path}. File path: {relative_path}")
+            full_path = Path(project_path) / relative_path
+            log.info(f"Trying: {full_path}")
+
+            if full_path.exists():
+                log.info(f"FOUND: {full_path}")
+                return full_path.read_text(errors="ignore")
+
+        log.warning(f"ORIGINAL FILE NOT FOUND: {file_path}")
+        return f"<FILE NOT FOUND: {file_path}>"
 
 def call_llm(prompt):
     payload = {
@@ -167,12 +222,13 @@ def call_llm(prompt):
 # ==== MAIN ====
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--chunk", required=True)
-    ap.add_argument("--project", required=True)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--chunk", required=True, help="Path to diff chunk file")
+    ap.add_argument("--projects", required=True, help="Project roots separated by ':' (e.g. /p1:/p2)")
+    ap.add_argument("--out", required=True, help="Output file for review")
     args = ap.parse_args()
 
     log.info(f"START chunk={args.chunk}")
+    log.info(f"Projects: {args.projects}")
 
     # Load MR global context
     mr_context = load_mr_context()
@@ -183,15 +239,13 @@ def main():
 
     original = ""
     if file_path:
-        original = load_original(args.project, file_path)
+        original = load_original(args.projects, file_path)
         log.info(f"ORIGINAL SIZE bytes={len(original)}")
 
     # Smart truncation for large files
     MAX_ORIGINAL_SIZE = 50000
     if len(original) > MAX_ORIGINAL_SIZE:
         log.warning(f"ORIGINAL FILE TOO LARGE ({len(original)} bytes), TRUNCATING")
-        # Keep imports (first 5000 chars) + end of file (last 40000 chars)
-        # This preserves class structure and recent changes
         imports_section = original[:5000]
         relevant_code = original[-(MAX_ORIGINAL_SIZE - 5000):]
         original = imports_section + "\n\n[... middle section truncated ...]\n\n" + relevant_code

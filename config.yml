@@ -11,6 +11,7 @@ paths:
   # Временные папки (очищаются при каждом запуске)
   CHUNKS_DIR: /app/temp_chunks
   OUT_DIR: /app/temp_results
+  DIFF_DIR: /app/temp_diff
 
 llm:
   # Дефолтные значения (перезаписываются из docker-compose)

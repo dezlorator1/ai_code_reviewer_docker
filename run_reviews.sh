@@ -4,7 +4,7 @@ set -euo pipefail
 
 # === Configuration loading ===
 
-# 1. Определяем директорию, где находится ЭТОТ скрипт (независимо от того, откуда его вызвали)
+# 1. Определяем директорию, где находится ЭТОТ скрипт
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/config.yml"
 
@@ -14,7 +14,7 @@ if ! command -v yq &> /dev/null; then
     exit 1
 fi
 
-# 2. Проверяем наличие конфига и загружаем его
+# 2. Загружаем конфиг
 LOG_DIR=$(yq -r '.paths.LOG_DIR' "$CONFIG_FILE")
 LOG_FILE=$(yq -r '.paths.LOG_FILE' "$CONFIG_FILE")
 OUT_DIR=$(yq -r '.paths.OUT_DIR' "$CONFIG_FILE")
@@ -23,8 +23,12 @@ SCRIPT_PATH=$(yq -r '.paths.SCRIPT_PATH' "$CONFIG_FILE")
 # =============================
 
 SCRIPT_NAME="$(basename "$0")"
-PROJECT_ROOT="$1"
-# Создаем директории, если их нет (переменные берутся из конфига)
+
+# Принимаем несколько путей к проектам через двоеточие
+# Например: /projects/backend:/projects/frontend
+PROJECT_ROOTS="$1"
+
+# Создаем директории, если их нет
 mkdir -p "$OUT_DIR"
 mkdir -p "$LOG_DIR"
 
@@ -33,28 +37,26 @@ log() {
 }
 
 log "START script"
+log "PROJECT_ROOTS=$PROJECT_ROOTS"
 
-# Проверяем, есть ли файлы для обработки, чтобы скрипт не падал на *.diff, если папка пуста
-# (shopt -s nullglob позволяет циклу не запускаться, если файлов нет)
+# Проверяем, есть ли файлы для обработки
 shopt -s nullglob
 FILES=("$CHUNKS_DIR"/*.diff)
 
 if [ ${#FILES[@]} -eq 0 ]; then
     log "No .diff files found in $CHUNKS_DIR"
 else
+    log "Found ${#FILES[@]} chunks to review"
+
     for chunk in "${FILES[@]}"; do
         name=$(basename "$chunk" .diff)
         log "START chunk=$name file=$chunk"
 
-        # Формируем команду (для лога)
-        CMD="python3 $SCRIPT_PATH --chunk \"$chunk\" --project \"$PROJECT_ROOT\" --out \"$OUT_DIR/$name.md\""
-        
-        log "DRY-RUN CMD: $CMD"
-        
-        # Запускаем реально
+        # Запускаем review_chunk.py
+        # Он сам разберется с префиксами проектов
         python3 "$SCRIPT_PATH" \
           --chunk "$chunk" \
-          --project "$PROJECT_ROOT" \
+          --projects "$PROJECT_ROOTS" \
           --out "$OUT_DIR/$name.md"
 
         log "END chunk=$name"
