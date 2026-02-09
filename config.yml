@@ -3,7 +3,8 @@ paths:
   SCRIPT_PATH: /app/review_chunk.py
   
   # Результаты и логи
-  SUMMARY_FILE: /app/output/summary.md
+  SUMMARY_FILE: summary.md
+  SUMMARY_PATH: /app/output/
   MR_CONTEXT_FILE: /app/output/mr_context.md
   LOG_FILE: /app/logs/run_reviews.log
   LOG_DIR: /app/logs

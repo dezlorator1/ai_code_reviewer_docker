@@ -4,6 +4,7 @@ from datetime import datetime
 import requests
 import os
 import yaml
+import argparse
 
 
 # Определяем путь к конфигу
@@ -15,7 +16,8 @@ with open(config_path) as f:
 
 # --- Используем ---
 RESULTS_DIR = Path(config['paths']['OUT_DIR'])
-OUT_FILE    = Path(config['paths']['SUMMARY_FILE'])
+SUMMARY_PATH = Path(config['paths']['SUMMARY_PATH'])
+DEFAULT_OUT_FILE    = Path(config['paths']['SUMMARY_FILE'])
 LOG_FILE    = Path(config['paths']['LOG_FILE'])
 MR_CONTEXT_FILE = Path(config['paths']['OUT_DIR']) / "mr_context.md"
 
@@ -261,6 +263,16 @@ def call_llm(prompt):
 
 # ==== MAIN ====
 def main():
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Summarize code reviews")
+    parser.add_argument("--output", help="Custom output filename (optional, default from config)")
+    args = parser.parse_args()
+
+    # Determine output file
+    OUT_FILE = SUMMARY_PATH / (args.output or DEFAULT_OUT_FILE)
+
+    log.info("SUMMARY START")
+    log.info(f"Output file: {OUT_FILE}")
     log.info("SUMMARY START")
 
     # Load MR context
